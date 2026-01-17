@@ -80,4 +80,49 @@ router.post("/:paymentId/refunds", auth, async (req, res) => {
   });
 });
 
+// const router = require("express").Router();
+// const auth = require("../middleware/auth");
+// const db = require("../db");
+
+// Get refund by ID
+router.get("/:id", auth, async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT 
+         id,
+         payment_id,
+         amount,
+         reason,
+         status,
+         created_at,
+         processed_at
+       FROM refunds
+       WHERE id = $1 AND merchant_id = $2`,
+      [req.params.id, req.merchant.id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        error: {
+          code: "NOT_FOUND",
+          description: "Refund not found"
+        }
+      });
+    }
+
+    res.status(200).json(rows[0]);
+  } catch (err) {
+    console.error("Get refund error:", err);
+    res.status(500).json({
+      error: {
+        code: "INTERNAL_ERROR",
+        description: "Failed to fetch refund"
+      }
+    });
+  }
+});
+
+// module.exports = router;
+
+
 module.exports = router;
