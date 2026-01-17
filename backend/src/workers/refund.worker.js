@@ -1,7 +1,12 @@
 const { Worker } = require("bullmq");
+
+// const Redis = require("ioredis");
+// const redisConfig = require("../config/redis.config");
+const { createRedisConnection } = require("../config/redis.config");
 const db = require("../db");
 const webhookQueue = require("../queues/webhook.queue");
 
+// const connection = new Redis(redisConfig);
 new Worker("refunds", async (job) => {
   const { refundId } = job.data;
 
@@ -23,4 +28,20 @@ new Worker("refunds", async (job) => {
     event: "refund.processed",
     payload: { refund },
   });
+} , 
+// { connection: require("../redis") }
+{ connection: createRedisConnection() }
+);
+
+
+worker.on("completed", (job) => {
+  console.log(`Refund job ${job.id} completed`);
 });
+
+worker.on("failed", (job, err) => {
+  console.error(`Refund job ${job.id} failed:`, err.message);
+});
+
+console.log("Refund worker started");
+
+module.exports = worker;

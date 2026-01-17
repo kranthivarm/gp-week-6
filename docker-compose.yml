@@ -39,37 +39,113 @@
 #       - backend
 #       - checkout
 #       - dashboard
+
 version: "3.9"
 
 services:
-  redis:
-    image: redis:7
-    container_name: payment-redis
+  # PostgreSQL database
+  db:
+    image: postgres:15
+    container_name: payment-db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: payments
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/src/db/init.sql:/docker-entrypoint-initdb.d/init.sql 
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
+  # Redis for job queue
+  redis:
+    image: redis:7-alpine
+    container_name: payment-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Backend/API
   backend:
     build: ./backend
     container_name: payment-backend
     env_file:
       - .env
+    ports:
+      - "8000:3000"  # backend accessible at localhost:8000
     depends_on:
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
+
+  # Worker service for async jobs
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    container_name: payment-worker
+    env_file:
+      - .env
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+
+  # Checkout frontend
   checkout:
     build: ./checkout
     container_name: payment-checkout
+    ports:
+      - "3001:3000"  # checkout accessible at localhost:3001
+    depends_on:
+      backend:
+        condition: service_healthy
 
+  # Dashboard frontend
   dashboard:
     build: ./dashboard
     container_name: payment-dashboard
+    ports:
+      - "3002:3000"  # dashboard accessible at localhost:3002
+    depends_on:
+      backend:
+        condition: service_healthy
 
+  # Nginx reverse proxy
   nginx:
     image: nginx:latest
     container_name: payment-nginx
     ports:
-      - "80:80"
+      - "80:80"  # accessible at localhost
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
     depends_on:
-      - backend
-      - checkout
-      - dashboard
+      backend:
+        condition: service_healthy
+      # checkout:
+      #   condition: service_healthy
+      # dashboard:
+      #   condition: service_healthy
+
+volumes:
+  pgdata:
